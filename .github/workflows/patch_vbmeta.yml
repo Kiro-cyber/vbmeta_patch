@@ -39,7 +39,7 @@ jobs:
         chmod +x ${{ github.event.inputs.ARCHITECTURE }}/vbmeta-disable-verification vbmeta.img
 
     - name: Upload to Release
-      uses: ncipollo/release-action@v1.18.0
+      uses: ncipollo/release-action@v1.21.0
       with:
         artifacts: vbmeta.img
         Name: Patched VBMeta
