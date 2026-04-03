@@ -36,7 +36,7 @@ jobs:
         
     - name: Give Permissio and Run Patch
       run: |
-        chmod u+x ${{ github.event.inputs.ARCHITECTURE }}/vbmeta-disable-verification
+        chmod +x ${{ github.event.inputs.ARCHITECTURE }}/vbmeta-disable-verification
         ./${{ github.event.inputs.ARCHITECTURE }}/vbmeta-disable-verification vbmeta.img
 
     - name: Upload to Release
