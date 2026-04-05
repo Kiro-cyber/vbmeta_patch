@@ -9,10 +9,10 @@ on:
         default: 'x86_64'
         type: choice
         options:
-        - x86_64
-        - x86
-        - arm64-v8a
-        - armaebi-v7a
+          - x86_64
+          - x86
+          - arm64-v8a
+          - armeabi-v7a
 
 permissions:
   contents: write
@@ -22,36 +22,88 @@ jobs:
     if: github.event.repository.owner.id == github.event.sender.id
     runs-on: ubuntu-latest
     steps:
- 
-    - name: Check Out
-      uses: actions/checkout@v6
-      
-    - name: Operating System Information
-      run: |
-        uname -a
-        
-    - name: Patch File Information
-      run: |
-        file ${{ github.event.inputs.ARCHITECTURE }}/vbmeta-disable-verification
-        
-    - name: Give Permissio and Run Patch
-      run: |
-        chmod +x ${{ github.event.inputs.ARCHITECTURE }}/vbmeta-disable-verification
-        ./${{ github.event.inputs.ARCHITECTURE }}/vbmeta-disable-verification vbmeta.img
+      - name: Check Out
+        uses: actions/checkout@v6
 
-    - name: Upload to Release
-      uses: actions/create-release@v1
-      with:
-        artifacts: vbmeta.img
-        Name: Patched VBMeta
-        draft: false
-        prerelease: true
-        tag: ${{ github.run_id }}
-        token: ${{ secrets.GITHUB_TOKEN }}
-        body: |
-          Your vbmeta image are now ready!
-          Flash it now.
+      - name: Operating System Information
+        run: |
+          echo "Runner architecture: $(uname -m)"
+          echo "Target architecture: ${{ github.event.inputs.ARCHITECTURE }}"
 
-    - name: Link to Release
-      run: |
-        echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${{ github.run_id }}"
+      - name: Validate Architecture Compatibility
+        run: |
+          TARGET_ARCH=${{ github.event.inputs.ARCHITECTURE }}
+          RUNNER_ARCH=$(uname -m)
+
+          if [[ "$TARGET_ARCH" == "arm64-v8a" || "$TARGET_ARCH" == "armeabi-v7a" ]]; then
+            echo "Warning: ARM architecture selected. Using QEMU for emulation."
+            echo "QEMU_ENABLED=true" >> $GITHUB_ENV
+          else
+            echo "Using native execution for $TARGET_ARCH"
+          fi
+
+      - name: Setup QEMU for ARM Emulation
+        if: contains(fromJSON('["arm64-v8a", "armeabi-v7a"]'), github.event.inputs.ARCHITECTURE)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64, arm
+
+      - name: Patch File Information
+        run: |
+          BINARY_PATH="${{ github.event.inputs.ARCHITECTURE }}/vbmeta-disable-verification"
+          if [ -f "$BINARY_PATH" ]; then
+            file "$BINARY_PATH"
+          else
+            echo "Error: Binary file not found at $BINARY_PATH"
+            exit 1
+          fi
+
+      - name: Give Permission and Run Patch
+        run: |
+          BINARY_PATH="${{ github.event.inputs.ARCHITECTURE }}/vbmeta-disable-verification"
+
+          # Check if binary exists
+          if [ ! -f "$BINARY_PATH" ]; then
+            echo "Error: Binary not found: $BINARY_PATH"
+            exit 1
+          fi
+
+          # Set executable permission
+          chmod +x "$BINARY_PATH"
+
+          # Run based on architecture
+          if [[ "${{ github.event.inputs.ARCHITECTURE }}" == "arm64-v8a" || "${{ github.event.inputs.ARCHITECTURE }}" == "armeabi-v7a" ]]; then
+            # Run in Docker container with QEMU emulation
+            docker run --rm \
+              -v $PWD:/workdir \
+              -w /workdir \
+              --platform linux/${{ github.event.inputs.ARCHITECTURE | replace('arm64-v8a', 'arm64') | replace('armeabi-v7a', 'arm') }} \
+              alpine:latest \
+              ./$BINARY_PATH vbmeta.img
+          else
+            # Native execution
+            ./$BINARY_PATH vbmeta.img
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-vbmeta
+          path: vbmeta.img
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.run_id }}
+          name: Patched VBMeta
+          draft: false
+          prerelease: true
+          body: |
+            Your vbmeta image is now ready!
+            Flash it now.
+          files: vbmeta.img
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Link to Release
+        run: |
+          echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ github.run_id }}"
