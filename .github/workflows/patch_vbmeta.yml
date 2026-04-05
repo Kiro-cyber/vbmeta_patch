@@ -30,23 +30,27 @@ jobs:
           echo "Runner architecture: $(uname -m)"
           echo "Target architecture: ${{ github.event.inputs.ARCHITECTURE }}"
 
-      - name: Validate Architecture Compatibility
-        run: |
-          TARGET_ARCH=${{ github.event.inputs.ARCHITECTURE }}
-          RUNNER_ARCH=$(uname -m)
-
-          if [[ "$TARGET_ARCH" == "arm64-v8a" || "$TARGET_ARCH" == "armeabi-v7a" ]]; then
-            echo "Warning: ARM architecture selected. Using QEMU for emulation."
-            echo "QEMU_ENABLED=true" >> $GITHUB_ENV
-          else
-            echo "Using native execution for $TARGET_ARCH"
-          fi
-
       - name: Setup QEMU for ARM Emulation
         if: contains(fromJSON('["arm64-v8a", "armeabi-v7a"]'), github.event.inputs.ARCHITECTURE)
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64, arm
+
+      - name: Prepare Architecture Mapping
+        id: arch-mapping
+        run: |
+          TARGET_ARCH="${{ github.event.inputs.ARCHITECTURE }}"
+          DOCKER_PLATFORM=""
+
+          if [ "$TARGET_ARCH" == "arm64-v8a" ]; then
+            DOCKER_PLATFORM="linux/arm64"
+          elif [ "$TARGET_ARCH" == "armeabi-v7a" ]; then
+            DOCKER_PLATFORM="linux/arm"
+          else
+            DOCKER_PLATFORM="linux/$TARGET_ARCH"
+          fi
+
+          echo "docker_platform=$DOCKER_PLATFORM" >> $GITHUB_OUTPUT
 
       - name: Patch File Information
         run: |
@@ -77,7 +81,7 @@ jobs:
             docker run --rm \
               -v $PWD:/workdir \
               -w /workdir \
-              --platform linux/${{ github.event.inputs.ARCHITECTURE | replace('arm64-v8a', 'arm64') | replace('armeabi-v7a', 'arm') }} \
+              --platform ${{ steps.arch-mapping.outputs.docker_platform }} \
               alpine:latest \
               ./$BINARY_PATH vbmeta.img
           else
